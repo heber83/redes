@@ -10,8 +10,7 @@
 #include <netinet/in.h>
 #include <arpa/inet.h>
 #include "rapidjson/document.h"
-#include "rapidjson/prettywriter.h"
-#include "rapidjson/filestream.h"
+
 using namespace std;
 using namespace rapidjson;
  
@@ -25,14 +24,12 @@ typedef struct {
     bool status;
 } TClient;
  
+ /* Mensagens resposta */
 const char agentListBack[] = "{\"protocol\":\"pdmj\",\"command\":\"agent-list-back\", \"back\":\"%s\", \"sender\":\"%s\",\"recepient\":\"%s\"}"; 
 const char pong[] = "{\"protocol\":\"pdmj\",\"command\":\"pong\", \"sender\":\"%s\",\"recepient\":\"%s\"}"; 
 const char authenticateBack[] = "{\"protocol\":\"pdmj\",\"command\":\"authenticate-back\", \"back\":\"%s\", \"sender\":\"%s\",\"recepient\":\"%s\"}"; 
 const char archiveListBack[] = "{\"protocol\":\"pdmj\",\"command\":\"archive-list-back\", \"back\":\"%s\", \"sender\":\"%s\",\"recepient\":\"%s\"}"; 
 const char archiveRequestBack[] = "{\"protocol\":\"pdmj\",\"command\":\"archive-request-back\", \"back\":\"%s\", \"id\":\"%s\", \"http_endress\":\"%s\", \"md5\":\"%s\", \"sender\":\"%s\",\"recepient\":\"%s\"}"; 
-const char f[] = "{\"protocol\":\"pdmj\",\"command\":\"agent-list-back\", \"back\":\"%s\", \"sender\":\"%s\",\"recepient\":\"%s\"}"; 
-
-
 
 /* {
  *  file:{id:”1”, nome:”file.txt”, size:”200mb”}, 
@@ -42,14 +39,10 @@ const char f[] = "{\"protocol\":\"pdmj\",\"command\":\"agent-list-back\", \"back
 void *threadClient(void * arg)
 {
     TClient client = *(TClient*) arg;
-    int size;
-    //bool loop = true;
-    char buffer[SIZE_BUFFER], msg[SIZE_BUFFER];
-    char *ip = strdup(inet_ntoa(client.addr.sin_addr));
-    int port = ntohs(client.addr.sin_port);
-    
-    cout << "[SERVIDOR] > Thread Client :" << client.port << " ";
-    cout << ip << ":" << port << "\n";
+    int size, port = ntohs(client.addr.sin_port);
+    char buffer[SIZE_BUFFER], msg[SIZE_BUFFER], *ip = strdup(inet_ntoa(client.addr.sin_addr));
+
+    cout << "[+] Thread: " << ip << "\n";
     
     while (1) {    
         size = recv(client.port, buffer, sizeof(buffer), 0);
@@ -57,15 +50,14 @@ void *threadClient(void * arg)
            break;
         } else {
             buffer[size] = '\0';
-            //cout << "[SERVIDOR] > Recebeu de " << inet_ntoa(client.addr.sin_addr) << ":" << ntohs(client.addr.sin_port) << ": ";
-            //cout << buffer << "\n";
-             
+            cout << "\n[<] Mensagem: " << ip << ", " << buffer << "\n\n";
+
             Document doc;
              
-            // Verifica se a sintaxe esta correta.
+            // Verifica se a sintaxe json esta correta.
             if (!doc.Parse<0>(buffer).HasParseError()) {
              
-                // Acesso aos membros do objeto
+                // Acesso aos membros do objeto json
                 assert(doc.IsObject());    
                  
                 assert(doc.HasMember("protocol"));
@@ -75,41 +67,45 @@ void *threadClient(void * arg)
                     assert(doc.HasMember("command"));
                     assert(doc["command"].IsString());
 
-                     //swicth de comandos
+                     // swicth de comandos
                     if(!strcmp("authenticate", doc["command"].GetString()) && !client.status) { //authenticate
-                         
-                        cout << "[SERVIDOR] > Recebeu comando authenticate\n";
-                        
+
                         assert(doc.HasMember("passport"));
 						assert(doc["passport"].IsString());
 						client.status = !strcmp(PASSWORD, doc["passport"].GetString()) ? true : false;
 
                         sprintf(msg, authenticateBack, (client.status ? "true" : "false") , "127.0.0.1", ip);
                         send(client.port, msg, sizeof(msg), 0);
+                        
+                        cout << "[=] Comando: authenticate\n";
+                        cout << "\n[>] Resposta: " << ip << ", " << msg << "\n\n";
                          
                     } else if(!strcmp("agent-list", doc["command"].GetString()) && client.status) { //agent-list
 						
-                        cout << "[SERVIDOR] > Recebeu comando agent-list\n";
                         sprintf(msg, agentListBack, "<IP>,<IP>,<IP>", "127.0.0.1", ip);
                         send(client.port, msg, sizeof(msg), 0); 
+                        
+                        cout << "[=] Comando: agent-list\n";
+                        cout << "\n[>] Resposta: " << ip << ", " << msg << "\n\n";
                      
                     } else if(!strcmp("ping", doc["command"].GetString()) && client.status) { //ping
                          
-                        cout << "[SERVIDOR] > Recebeu comando ping\n";
                         sprintf(msg, pong, "127.0.0.1", ip);
                         send(client.port, msg, sizeof(msg), 0); 
+                        
+                        cout << "[=] Comando: ping\n";
+                        cout << "\n[>] Resposta: " << ip << ", " << msg << "\n\n";
                          
                     } else if(!strcmp("archive-list", doc["command"].GetString()) && client.status) { //archive-list
                          
-                        cout << "[SERVIDOR] > Recebeu comando archive-list\n";
                         sprintf(msg, archiveListBack, "lista e arquivos", "127.0.0.1", ip);
                         send(client.port, msg, sizeof(msg), 0); 
+                        
+                        cout << "[=] Comando: archive-list\n";                       
+                        cout << "\n[>] Resposta: " << ip << ", " << msg << "\n\n";
                          
                     } else if(!strcmp("archive-request", doc["command"].GetString()) && client.status) { //archive-request
-                         
-                        cout << "[SERVIDOR] > Recebeu comando archive-request\n";
-                        
-                        
+
                         assert(doc.HasMember("id"));
 						assert(doc["id"].IsString());
 						// criar lista de arquivos local, id = indice do vetor
@@ -117,10 +113,13 @@ void *threadClient(void * arg)
                         
                         sprintf(msg, archiveRequestBack, "true", "3", "http://ip:port/file.txt", "MD5-HASH", "127.0.0.1", ip);
                         send(client.port, msg, sizeof(msg), 0); 
+                        
+                        cout << "[=] Comando: archive-request\n";
+                        cout << "\n[>] Resposta: " << ip << ", " << msg << "\n\n";
                          
                     } else if(!strcmp("end-conection", doc["command"].GetString()) && client.status) { //end-conection
                          
-                        cout << "[SERVIDOR] > Recebeu comando end-conection\n";
+                        cout << "[=] Comando: end-conection\n";
                         
                         //remove o usuario da lista e termina conexão
                         //loop = false;
@@ -129,29 +128,30 @@ void *threadClient(void * arg)
                     } else {
                         // comando não reconhecido
                         // ou cliente não autentificado
-                        cout << "[SERVIDOR] > Comando: Inválido ou não autentificado\n";
+                        cout << "[=] Comando: inválido\n";
                     }
                     
                 }
  
             } else {
-                cout << "[SERVIDOR] > Recebeu um comando invállido !(JSON)\n";
+                cout << "[=] Comando: !(JSON)\n";
             }  
         }      
          
     }
     
-    cout << "[SERVIDOR] > Cliente Desconectado :" << inet_ntoa(client.addr.sin_addr) << ":" << ntohs(client.addr.sin_port) << "\n";   
-    
+    cout << "[-] Desconexão: " << ip << "\n";   
+    cout << "[-] Thread: " << ip << "\n";
+     
     close(client.port);
     free(ip);
-    
+
     return NULL;
 }
  
 int main(int argc, char** argv)
 {
-    cout << "*** SERVIDOR ***\n\n";
+    cout << "*** SERVIDOR DO PEER ***\n\n";
      
     int port;
     struct sockaddr_in local;
@@ -168,12 +168,14 @@ int main(int argc, char** argv)
     local.sin_addr.s_addr = INADDR_ANY;
     memset(&(local.sin_zero), '\0', 8);
                  
+    // bind : associa a porta ao servidor
     if (bind(port, (struct sockaddr *) &local, sizeof(struct sockaddr_in)) == -1) {
         perror("erro: nao conseguiu fazer bind\n");
         exit(1);
     }
        
     /* agora faz uma chamada ao listen*/
+    // escuta na porta por 50 conexões
     if (listen(port, 50) ==-1) {
         perror("erro: problemas com o listen\n");
         exit(1);
@@ -181,6 +183,8 @@ int main(int argc, char** argv)
      
     TClient client;
     int zsize = sizeof(struct sockaddr_in);
+    
+    // pega as conexões e cria uma thread para cada uma
     while (1) {
          
         client.port = accept(port, (struct sockaddr*) &client.addr, (socklen_t *) &zsize);
@@ -191,7 +195,7 @@ int main(int argc, char** argv)
         
         client.status = false;
          
-        cout << "[SERVIDOR] > Cliente Conectado: " << inet_ntoa(client.addr.sin_addr) << ":" << ntohs(client.addr.sin_port) << "\n";  
+        cout << "[+] Conexão: " << inet_ntoa(client.addr.sin_addr) << "\n";  
          
         pthread_t thread;
         pthread_create(&thread, NULL, threadClient, (void*) &client);
