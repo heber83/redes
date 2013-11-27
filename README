@@ -1,3 +1,7 @@
 rapidjson - Biblioteca JSON
 
-teste
+falta implementar:
+	- parte de arquivos no servidor peer
+	- cliente peer
+	- servidor http
+	- servidor central
