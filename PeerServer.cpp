@@ -12,6 +12,7 @@
 #include <arpa/inet.h>
 #include "rapidjson/document.h"
 #include <ifaddrs.h>
+#include <dirent.h>
 
 using namespace std;
 using namespace rapidjson;
@@ -46,6 +47,18 @@ typedef struct {
     struct sockaddr_in addr;
     bool status;
 } TClient;
+
+typedef struct {
+	char *name;
+	int size;
+} sFile;
+
+typedef struct {
+	sFile *list;
+	int cout;
+} sListFile;
+ 
+sListFile listFiles;
  
  /* Mensagens resposta */
 const char agentListBack[] = "{\"protocol\":\"pdmj\",\"command\":\"agent-list-back\", \"status\":\"%d\", \"back\":\"%s\", \"sender\":\"%s\",\"receptor\":\"%s\"}"; 
@@ -55,8 +68,7 @@ const char archiveListBack[] = "{\"protocol\":\"pdmj\",\"command\":\"archive-lis
 const char archiveRequestBack[] = "{\"protocol\":\"pdmj\",\"command\":\"archive-request-back\", \"status\":\"%d\", \"id\":\"%s\", \"http_endress\":\"%s\", \"size\":\"%s\", \"md5\":\"%s\", \"sender\":\"%s\",\"receptor\":\"%s\"}"; 
 
 /* {
- *  file:{id:”1”, nome:”file.txt”, size:”200mb”}, 
- * 	folder:{name:”pasta”, file:{id:”2”, nome:”file1.txt”, size:”100kb”}}
+ *  [file:{id:”1”, nome:”file.txt”, size:”200”],file:[id:”3”, nome:”file1.txt”, size:”100kb”] 
  * }*/
 
 	void *threadClient(void*);
@@ -68,11 +80,15 @@ const char archiveRequestBack[] = "{\"protocol\":\"pdmj\",\"command\":\"archive-
 	
 	void ler_ips();
 	void salvar_ips();
+	int fileSize(char*, char*);
+	void listaArquivos(char*) ;
  
 int main(int argc, char** argv)
 {
 	myip(meu_ip);
-	myfolder(minha_pasta);
+	if(myfolder(minha_pasta)) {
+		listaArquivos(minha_pasta);
+	}
 	lista_ip.count = 0;
 	ler_ips();						
 	
@@ -327,7 +343,14 @@ void ler_ips()
 
 void salvar_ips() 
 {
-	// falta
+	ler_ips(); //atualiza ips
+	FILE *fp = fopen(LISTA_IPS, "w");
+	if(fp) {
+		for(int i = 0; i < lista_ip.count; i++) {
+			fprintf(fp, "%s\n", lista_ip.ip[i]);
+		}
+		fclose(fp);
+	}
 }
 
 bool myfolder(char *buffer)
@@ -359,4 +382,41 @@ void myip(char *buffer)
         } 
     }
     if (ifAddrStruct!=NULL) freeifaddrs(ifAddrStruct);	
+}
+
+int fileSize(char *folder, char*name) 
+{
+	char b[2048];
+	sprintf(b, "%s%s", folder, name);
+	struct stat s;
+	if(stat(b, &s) == 0) {
+		return s.st_size;
+	} else {
+		return -1;
+	}
+}
+
+void listaArquivos(char *folder) 
+{
+    DIR *dir = opendir(folder);
+    struct dirent *entrada = 0;
+    int  i;
+    
+    for(i = 0; i < listFiles.cout; i++) {
+		free(listFiles.list[i].name);
+		free(listFiles.list);
+	}
+    
+    i = listFiles.cout = 0;
+
+    while((entrada = readdir(dir)))
+        if(entrada->d_type == 0x8) {
+			listFiles.list = (sFile*) malloc((i+1)*sizeof(sFile));
+			listFiles.list[i].name = strdup(entrada->d_name);
+			listFiles.list[i].size = fileSize(folder, entrada->d_name);
+			//printf("%d %s %d\n", i, listFiles.list[i].name, listFiles.list[i].size);
+			i++;
+		}
+	listFiles.cout = i;
+    closedir (dir);
 }
