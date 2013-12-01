@@ -10,16 +10,17 @@
 #include <sys/stat.h>
 #include <netinet/in.h>
 #include <arpa/inet.h>
-#include "rapidjson/document.h"
 #include <ifaddrs.h>
 #include <dirent.h>
+#include "libs/rapidjson/document.h"
+#include "libs/md5.h"
 
 using namespace std;
 using namespace rapidjson;
  
-#define SERVER_PORT 5555
+#define SERVER_PORT 9876
 #define SIZE_BUFFER 2048
-#define PASSWORD "REDE_PDMJ"
+#define PASSWORD "DiJqWHqKtiDgZySAv7ZX"
 #define LISTA_IPS "files/ip.txt"
 
 #define MSG_CONTINUAR 100				// Quando o ping foi satisfeito.
@@ -55,7 +56,7 @@ typedef struct {
 
 typedef struct {
 	sFile *list;
-	int cout;
+	int count;
 } sListFile;
  
 sListFile listFiles;
@@ -65,11 +66,7 @@ const char agentListBack[] = "{\"protocol\":\"pdmj\",\"command\":\"agent-list-ba
 const char pong[] = "{\"protocol\":\"pdmj\",\"command\":\"pong\", \"status\":\"%d\", \"sender\":\"%s\",\"receptor\":\"%s\"}"; 
 const char authenticateBack[] = "{\"protocol\":\"pdmj\",\"command\":\"authenticate-back\", \"status\":\"%d\", \"sender\":\"%s\",\"receptor\":\"%s\"}"; 
 const char archiveListBack[] = "{\"protocol\":\"pdmj\",\"command\":\"archive-list-back\", \"status\":\"%d\", \"back\":\"%s\", \"sender\":\"%s\",\"receptor\":\"%s\"}"; 
-const char archiveRequestBack[] = "{\"protocol\":\"pdmj\",\"command\":\"archive-request-back\", \"status\":\"%d\", \"id\":\"%s\", \"http_endress\":\"%s\", \"size\":\"%s\", \"md5\":\"%s\", \"sender\":\"%s\",\"receptor\":\"%s\"}"; 
-
-/* {
- *  [file:{id:”1”, nome:”file.txt”, size:”200”],file:[id:”3”, nome:”file1.txt”, size:”100kb”] 
- * }*/
+const char archiveRequestBack[] = "{\"protocol\":\"pdmj\",\"command\":\"archive-request-back\", \"status\":\"%d\", \"id\":\"%d\", \"http_endress\":\"%s\", \"size\":\"%d\", \"md5\":\"%s\", \"sender\":\"%s\",\"receptor\":\"%s\"}"; 
 
 	void *threadClient(void*);
 	bool myfolder(char*);
@@ -90,7 +87,7 @@ int main(int argc, char** argv)
 		listaArquivos(minha_pasta);
 	}
 	lista_ip.count = 0;
-	ler_ips();						
+	ler_ips();							
 	
     cout << "*** SERVIDOR PEER : " << meu_ip << " ***\n\n";
      
@@ -201,7 +198,7 @@ void *threadClient(void * arg)
                          
                     } else if(!strcmp("agent-list", doc["command"].GetString())) { //agent-list
 						
-						char *lips = (char*) malloc((lista_ip.count*16)+1);
+						char *lips = (char*) malloc((lista_ip.count*16));
 						lips[0] = '\0';	
 						for(int i = 0; i < lista_ip.count; i++) {
 							strcat(lips, lista_ip.ip[i]);
@@ -228,12 +225,24 @@ void *threadClient(void * arg)
                         cout << "\n[>] Resposta: " << ip << ", " << msg << "\n\n";
                          
                     } else if(!strcmp("archive-list", doc["command"].GetString())) { //archive-list
-                         
-                        /* falta: criar lista de arquivos e pastas
-                         * lista com id, nome, tamanho, md5
-                         * */
-                         
-                        sprintf(msg, archiveListBack, MSG_NAO_IMPLEMENTADO, "", meu_ip, ip);
+						
+						listaArquivos(minha_pasta);
+						
+						char *lfiles = (char*) malloc((listFiles.count*255)), temp[255];
+						lfiles[0] = '\0';	
+						for(int i = 0; i < listFiles.count; i++) {
+							sprintf(temp, "file:[id:\"%d\",nome:\"%s\",size:\"%d\"]", i, listFiles.list[i].name, listFiles.list[i].size);
+							strcat(lfiles, temp);
+							if(i != (listFiles.count-1))
+								strcat(lfiles, ",\n");	
+						}				
+                        
+						if(client.status) {
+							sprintf(msg, archiveListBack, MSG_OK, lfiles, meu_ip, ip);
+						} else {
+							sprintf(msg, archiveListBack, MSG_ACESSO_NAO_AUTORIZADO, "", meu_ip, ip);
+						}                        
+                        
                         send(client.port, msg, sizeof(msg), 0); 
                         
                         cout << "[=] Comando: archive-list\n";                       
@@ -241,18 +250,30 @@ void *threadClient(void * arg)
                          
                     } else if(!strcmp("archive-request", doc["command"].GetString())) { //archive-request
 
-						/* falta: criar lista de arquivos
-						 * endereço http do arquivo
-						 * */
+						if(client.status) {
+							
+							assert(doc.HasMember("id"));
+							assert(doc["id"].IsString());
+							int id = atoi(doc["id"].GetString());
+							if(listFiles.list[id].name) {
+								
+								char url[512];
+								sprintf(url, "http://%s:%d/%s", meu_ip, 80, listFiles.list[id].name);
+																
+								MD5 md5;
+								char temp[255];
+								sprintf(temp, "%s%s", minha_pasta, listFiles.list[id].name);
 
-                        assert(doc.HasMember("id"));
-						assert(doc["id"].IsString());
-						// criar lista de arquivos local, id = indice do vetor
-						//doc["id"].GetString()
-                        
-                        //sprintf(msg, archiveRequestBack, <codigo>, "3", "http://ip:port/file.txt", "size", "MD5-HASH", meu_ip, ip);
-                        sprintf(msg, archiveRequestBack, MSG_NAO_IMPLEMENTADO, "", "", "", "", meu_ip, ip);
-                        send(client.port, msg, sizeof(msg), 0); 
+								sprintf(msg, archiveRequestBack, MSG_ENCONTRADO, id, url, listFiles.list[id].size, md5.digestFile(temp), meu_ip, ip);
+							} else {
+								sprintf(msg, archiveRequestBack, MSG_ARQUIVO_NAO_ENCONTRADO, 0, "", 0, "", meu_ip, ip);
+							}
+							
+						} else {
+							sprintf(msg, archiveRequestBack, MSG_ACESSO_NAO_AUTORIZADO, 0, "", 0, "", meu_ip, ip);
+						}  
+           
+                       send(client.port, msg, sizeof(msg), 0); 
                         
                         cout << "[=] Comando: archive-request\n";
                         cout << "\n[>] Resposta: " << ip << ", " << msg << "\n\n";
@@ -402,21 +423,24 @@ void listaArquivos(char *folder)
     struct dirent *entrada = 0;
     int  i;
     
-    for(i = 0; i < listFiles.cout; i++) {
+    for(i = 0; i < listFiles.count; i++) {
 		free(listFiles.list[i].name);
 		free(listFiles.list);
 	}
     
-    i = listFiles.cout = 0;
+    i = listFiles.count = 0;
+	
+	int *pt = NULL;
 
     while((entrada = readdir(dir)))
         if(entrada->d_type == 0x8) {
-			listFiles.list = (sFile*) malloc((i+1)*sizeof(sFile));
+			listFiles.list = (sFile*) realloc(pt, (i+1)*sizeof(sFile));
+			if(listFiles.list) pt = (int*)listFiles.list;
 			listFiles.list[i].name = strdup(entrada->d_name);
 			listFiles.list[i].size = fileSize(folder, entrada->d_name);
 			//printf("%d %s %d\n", i, listFiles.list[i].name, listFiles.list[i].size);
 			i++;
 		}
-	listFiles.cout = i;
+	listFiles.count = i;
     closedir (dir);
 }
